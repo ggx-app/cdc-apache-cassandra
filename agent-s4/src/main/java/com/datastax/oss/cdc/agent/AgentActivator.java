@@ -18,47 +18,52 @@ package com.datastax.oss.cdc.agent;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.FBUtilities;
 
-import java.lang.instrument.Instrumentation;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.osgi.framework.BundleActivator;
+import org.osgi.framework.BundleContext;
+
+import javax.annotation.Nullable;
 
 @Slf4j
-public class Agent {
-    public static void premain(String agentArgs, Instrumentation inst) {
-        log.info("[Agent] In premain method");
-        try {
-            main(agentArgs, inst);
-        } catch(Exception e) {
-            log.error("error:", e);
-            System.exit(-1);
-        }
+public class AgentActivator extends io.stargate.core.activator.BaseActivator {
+    public AgentActivator() {
+        super("agent-s4", false);
     }
 
-    public static void agentmain(String agentArgs, Instrumentation inst) {
-        log.info("[Agent] In agentmain method");
-        try {
-            main(agentArgs, inst);
-        } catch(Exception e) {
-            log.error("error:", e);
-            System.exit(-1);
-        }
-    }
-
-    static void main(String agentArgs, Instrumentation inst) throws Exception {
-        DatabaseDescriptor.daemonInitialization();
-        if (DatabaseDescriptor.isCDCEnabled() == false) {
-            log.error("cdc_enabled=false in your cassandra configuration, CDC agent not started.");
-        } else if (DatabaseDescriptor.getCDCLogLocation() == null) {
-            log.error("cdc_raw_directory=null in your cassandra configuration, CDC agent not started.");
-        } else {
-            startCdcAgent(agentArgs);
-        }
+    @Nullable
+    @Override
+    protected ServiceAndProperties createService() {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.submit(() -> {
+            try {
+                do {
+                    log.info("Waiting for Cassandra to initialize...");
+                    Thread.sleep(1000);
+                } while (!DatabaseDescriptor.isDaemonInitialized());
+                if (!DatabaseDescriptor.isCDCEnabled()) {
+                    log.error("cdc_enabled=false in your cassandra configuration, CDC agent not started.");
+                } else if (DatabaseDescriptor.getCDCLogLocation() == null) {
+                    log.error("cdc_raw_directory=null in your cassandra configuration, CDC agent not started.");
+                } else {
+                    startCdcAgent("cdcWorkingDir=/stargate/stargate-persistence-cassandra-4.0/cdc");
+                }
+            } catch (Exception e) {
+                log.error("Error starting CDC agent", e);
+            }
+        });
+        return null;
     }
 
     static void startCdcAgent(String agentArgs) throws Exception {
         log.info("Starting CDC agent, cdc_raw_directory={}", DatabaseDescriptor.getCDCLogLocation());
         AgentConfig config = AgentConfig.create(AgentConfig.Platform.PULSAR, agentArgs);
+
 
         SegmentOffsetFileWriter segmentOffsetFileWriter = new SegmentOffsetFileWriter(config.cdcWorkingDir);
         segmentOffsetFileWriter.loadOffsets();
@@ -76,9 +81,9 @@ public class Agent {
             try {
                 do {
                     // wait to initialize the hostID before starting
+                    log.info("Waiting for localhost to be initialized...");
                     Thread.sleep(1000);
                 } while(StorageService.instance.getLocalHostUUID() == null);
-
                 commitLogProcessor.initialize();
                 commitLogProcessor.start();
             } catch(Exception e) {
@@ -91,4 +96,9 @@ public class Agent {
 
         log.info("CDC agent started");
     }
+
+  @Override
+  protected List<ServicePointer<?>> dependencies() {
+    return Collections.emptyList();
+  }
 }

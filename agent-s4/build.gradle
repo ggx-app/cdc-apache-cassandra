@@ -14,7 +14,23 @@ application {
 jar {
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     manifest {
-        attributes 'Premain-Class': "$mainClassName"
+        attributes 'Bundle-SymbolicName': "com.datastax.oss.cdc.agent"
+        attributes 'Bundle-Activator': 'com.datastax.oss.cdc.agent.AgentActivator'
+        attributes 'Bundle-Name': "CDC Agent"
+        attributes 'Import-Package': "org.slf4j,\
+            org.slf4j.helpers,\
+            org.slf4j.spi,\
+            org.osgi.framework,\
+            org.javatuples,\
+            io.stargate.core,\
+            io.stargate.db,\
+            org.apache.cassandra,\
+            org.apache.commons,\
+            com.google.common"
+        attributes 'Export-Package': "!*"
+        attributes 'Embed-Dependency': "*;scope=compile|runtime"
+        attributes 'Embed-Transitive': "true"
+        attributes 'DynamicImport-Package': "*"
     }
     zip64=true
 }
@@ -47,8 +63,13 @@ dependencies {
     implementation("org.apache.avro:avro:${avroVersion}")
 
     implementation("${pulsarGroup}:pulsar-client:${pulsarVersion}")
+    implementation("org.osgi:org.osgi.core:6.0.0")
+    compileOnly("io.stargate.core:core:2.0.13")
+//    implementation("org.springframework:spring-jmx:2.0.8")
 
     compileOnly("org.apache.cassandra:cassandra-all:${cassandra4Version}")
+//    implementation("io.stargate.db.cassandra:persistence-cassandra-4.0:2.0.13")
+
     testCompileOnly("org.apache.cassandra:cassandra-all:${cassandra4Version}")
     testImplementation("org.apache.cassandra:cassandra-all:${cassandra4Version}") {
         exclude group: 'io.netty'
@@ -94,7 +115,7 @@ build.dependsOn(project.tasks['docker'])
 dockerCompose {
     projectName = "test1"
     useComposeFiles = ['../docker-compose.yaml']
-    environment.put 'AGENT_VERSION', 'c4'
+    environment.put 'AGENT_VERSION', 's4'
     environment.put 'PROJECT_VERSION', project.version
     environment.put 'CASSANDRA_IMAGE', "${dockerRepo}cassandra:${cassandra4Version}-cdc"
     environment.put 'PULSAR_IMAGE', "${dockerRepo}pulsar:${testPulsarImageTag}-csc"
